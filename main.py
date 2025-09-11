@@ -534,6 +534,39 @@ async def _show(ctx):
     response += "```"
     await ctx.send(response)
 
+@bot.command(name="profit")
+async def _profit(ctx):
+    user_id = str(ctx.author.id)
+    create_user_csv_if_not_exists(user_id)
+    df = get_user_data(user_id)
+    if '損益' not in df.columns or df[df['類別'] == '損益'].empty:
+        await ctx.send("目前沒有任何已實現的損益紀錄。")
+        return
+    profit_df = df[df['類別'] == '損益']
+    total_profit = profit_df['損益'].sum()
+    color = discord.Color.green() if total_profit >= 0 else discord.Color.red()
+    title = "📈 總已實現損益" if total_profit >= 0 else "📉 總已實現損益"
+    embed = discord.Embed(title=title, color=color)
+    embed.add_field(name=f"{ctx.author.display_name} 的總損益為：", value=f"**${total_profit:,.2f}**")
+    await ctx.send(embed=embed)
+
+@bot.command(name="profitclear")
+async def _profitclear(ctx):
+    user_id = str(ctx.author.id)
+    create_user_csv_if_not_exists(user_id)
+    df = get_user_data(user_id)
+    if '損益' not in df.columns or df[df['類別'] == '損益'].empty:
+        await ctx.send("您目前沒有任何損益紀錄可歸零。")
+        return
+    profit_df = df[df['類別'] == '損益']
+    total_profit = profit_df['損益'].sum()
+    if total_profit == 0:
+        await ctx.send("您的總損益已經是 0，無需歸零。")
+        return
+    log_to_user_csv(user_id, "!profitclear", "損益", "SYSTEM", "損益歸零", 0, 0, 0, profit_loss=-total_profit)
+    await ctx.send(f"✅ **損益已歸零！** 已新增一筆 ${-total_profit:,.2f} 的紀錄來平衡您的總損益。")
+
+
 
 @bot.command(name="monkey")
 async def _monkey(ctx, *args):
