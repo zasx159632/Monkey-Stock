@@ -126,8 +126,8 @@ def get_stock_price(stock_id: str) -> float:
             price_str = msg[0].get('z')
             if price_str in (None, '-', ''):
                 price_str = msg[0].get('o')  # 若無成交價則取開盤價
-            if price_str in (None,'-',''):
-                peice_str = msg[0].get('y') #若無成交價也無開盤價，抓取昨收價
+            if price_str in (None, '-', ''):
+                peice_str = msg[0].get('y')  #若無成交價也無開盤價，抓取昨收價
             if price_str and price_str not in (None, '-', '', '無資料'):
                 return round(float(price_str), 2)
         return 0.0
