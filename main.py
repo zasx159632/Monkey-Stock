@@ -432,14 +432,13 @@ async def _sell(ctx,
 
     await ctx.send(embed=embed)
 
-@bot.command(name="summary")
+@bot.command(name="summary_image")
 async def summary_image(ctx):
     """
-    生成投資組合摘要黑底白字圖片
+    生成黑底白字、使用 NotoSansCJK 的投資組合摘要圖片
     """
     import os
     from PIL import Image, ImageDraw, ImageFont
-    from datetime import datetime
 
     user_id = str(ctx.author.id)
     create_user_csv_if_not_exists(user_id)
@@ -489,10 +488,10 @@ async def summary_image(ctx):
             ])
             total_cost += row['總成本']
 
-    # -------- 產生圖片設定 --------
-    row_height = 45   # 行距加大
-    header_height = 90
-    footer_height = 70
+    # --- 產生圖片設定 ---
+    row_height = 50       # 行距加大
+    header_height = 100
+    footer_height = 80
     img_width = 1000
     img_height = header_height + len(rows)*row_height + footer_height
 
@@ -500,23 +499,24 @@ async def summary_image(ctx):
     img = Image.new("RGB", (img_width, img_height), (0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    # 等寬中文字型 (Noto Sans Mono CJK)
-    font_path = "/usr/share/fonts/opentype/noto/NotoSansMonoCJK-Regular.ttc"
+    # 使用原本的 NotoSansCJK
+    font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
     if not os.path.exists(font_path):
-        # 如果沒有，嘗試另一個常見的等寬字型
-        font_path = "/usr/share/fonts/opentype/noto/NotoSansMono-Regular.ttf"
-    font = ImageFont.truetype(font_path, 28)
-    bold_font = ImageFont.truetype(font_path, 34)
+        await ctx.send("❌ 找不到 NotoSansCJK 字型，請先安裝 fonts-noto-cjk")
+        return
+
+    font = ImageFont.truetype(font_path, 28)       # 主要字體
+    bold_font = ImageFont.truetype(font_path, 34)  # 標題
 
     # 標題
-    title = f"📊 {ctx.author.display_name} 的投資組合摘要"
-    draw.text((20, 20), title, fill="white", font=bold_font)
+    draw.text((20, 20), f"📊 {ctx.author.display_name} 的投資組合摘要",
+              fill="white", font=bold_font)
 
     # 表頭
     headers = ["股票", "股數", "均價", "現價", "市值", "損益", "報酬率"]
-    x_positions = [20, 300, 420, 540, 660, 800, 910]
+    x_positions = [20, 300, 420, 540, 660, 800, 920]
     for x, h in zip(x_positions, headers):
-        draw.text((x, 90), h, fill="white", font=font)
+        draw.text((x, 100), h, fill="white", font=font)
 
     # 表格內容
     y = header_height
@@ -537,11 +537,10 @@ async def summary_image(ctx):
         )
         draw.text((20, y + 20), total_text, fill="white", font=bold_font)
 
-    # 存檔 & 傳送
+    # 存檔並傳送
     file_path = "portfolio_summary.png"
     img.save(file_path)
     await ctx.send(file=discord.File(file_path))
-
 
 @bot.command(name="profit")
 async def _profit(ctx):
