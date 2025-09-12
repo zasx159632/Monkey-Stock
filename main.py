@@ -433,7 +433,7 @@ async def _sell(ctx,
 
     await ctx.send(embed=embed)
 
-@bot.command(name="summary_test")
+@bot.command(name="summary")
 async def summary_image(ctx):
     user_id = str(ctx.author.id)
     create_user_csv_if_not_exists(user_id)
