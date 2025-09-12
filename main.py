@@ -432,68 +432,171 @@ async def _sell(ctx,
 
     await ctx.send(embed=embed)
 
-
 @bot.command(name="summary")
 async def _summary(ctx, stock_identifier: str = None, new_cost: float = None):
     user_id = str(ctx.author.id)
     create_user_csv_if_not_exists(user_id)
 
+    # === 成本調整邏輯 ===
     if stock_identifier and new_cost:
         if new_cost <= 0:
             await ctx.send("❌ 新的成本必須是正數。")
+            return
+        stock_code, stock_name = get_stock_info(stock_identifier)
+        if not stock_code:
+            await ctx.send(f"❌ 在您的庫存中找不到股票 `{stock_identifier}`。")
+            return
+
+        df = get_user_data(user_id)
+        inventory = df[df['類別'] == '庫存']
+        stock_inventory = inventory[inventory['股票代碼'] == stock_code]
+        current_shares = stock_inventory['股數'].sum()
+
+        if current_shares > 0:
+            current_total_cost = stock_inventory['金額'].sum()
+            new_total_cost = new_cost * current_shares
+            cost_adjustment = new_total_cost - current_total_cost
+
+            log_to_user_csv(
+                user_id, "!summary (adjust)", "庫存",
+                stock_code, stock_name, 0, 0,
+                cost_adjustment
+            )
+            await ctx.send(
+                f"✅ 已將 **{stock_name}({stock_code})** 的平均成本調整為 **${new_cost:,.2f}**。"
+            )
         else:
-            stock_code, stock_name = get_stock_info(stock_identifier)
-            if not stock_code:
-                await ctx.send(f"❌ 在您的庫存中找不到股票 `{stock_identifier}`。")
-            else:
-                df = get_user_data(user_id)
-                inventory = df[df['類別'] == '庫存']
-                stock_inventory = inventory[inventory['股票代碼'] == stock_code]
-                current_shares = stock_inventory['股數'].sum()
-
-                if current_shares > 0:
-                    current_total_cost = stock_inventory['金額'].sum()
-                    new_total_cost = new_cost * current_shares
-                    cost_adjustment = new_total_cost - current_total_cost
-
-                    log_to_user_csv(user_id, "!summary (adjust)", "庫存",
-                                    stock_code, stock_name, 0, 0,
-                                    cost_adjustment)
-                    await ctx.send(
-                        f"✅ 已將 **{stock_name}({stock_code})** 的平均成本調整為 **${new_cost:,.2f}**。"
-                    )
-                else:
-                    await ctx.send(
-                        f"❌ 您目前未持有 **{stock_name}({stock_code})**，無法調整成本。")
-
+            await ctx.send(
+                f"❌ 您目前未持有 **{stock_name}({stock_code})**，無法調整成本。"
+            )
+        return
     elif stock_identifier or new_cost:
         await ctx.send("❌ 參數錯誤！若要調整成本，必須同時提供 `股票代碼/名稱` 和 `新的平均成本`。")
+        return
 
+    # === 讀取庫存 ===
     df = get_user_data(user_id)
     inventory = df[df['類別'] == '庫存']
     if inventory.empty:
         await ctx.send("您的庫存目前是空的。")
         return
 
-    embed = discord.Embed(title=f"{ctx.author.display_name} 的庫存摘要",
-                          color=discord.Color.green())
-    summary_data = inventory.groupby(['股票代碼', '股票名稱'
-                                      ]).agg(股數=('股數', 'sum'),
-                                             總金額=('金額', 'sum')).reset_index()
+    summary_data = inventory.groupby(['股票代碼', '股票名稱']).agg(
+        股數=('股數', 'sum'),
+        總成本=('金額', 'sum')
+    ).reset_index()
     summary_data = summary_data[summary_data['股數'] > 0]
-
     if summary_data.empty:
         await ctx.send("您的庫存目前是空的。")
         return
 
-    summary_data['平均股價'] = summary_data['總金額'] / summary_data['股數']
-    for index, row in summary_data.iterrows():
-        embed.add_field(
-            name=f"**{row['股票名稱']} ({row['股票代碼']})**",
-            value=
-            f"持有股數：{int(row['股數']):,} 股\n平均成本：${row['平均股價']:,.2f}\n總市值：${row['總金額']:,.2f}",
-            inline=False)
+    total_cost = total_value = total_profit_loss = total_shares = 0
+    stock_details = []
+
+    for _, row in summary_data.iterrows():
+        current_price = get_stock_price(row['股票代碼'])
+        avg_cost = row['總成本'] / row['股數']
+
+        if current_price > 0:
+            current_value = row['股數'] * current_price
+            profit_loss = current_value - row['總成本']
+            profit_percentage = (profit_loss / row['總成本']) * 100
+
+            total_cost += row['總成本']
+            total_value += current_value
+            total_profit_loss += profit_loss
+            total_shares += row['股數']
+
+            stock_details.append({
+                'name': row['股票名稱'],
+                'code': row['股票代碼'],
+                'shares': int(row['股數']),
+                'avg_price': avg_cost,
+                'current_price': current_price,
+                'market_value': current_value,
+                'profit_loss': profit_loss,
+                'profit_percentage': profit_percentage,
+                'has_price': True
+            })
+        else:
+            total_cost += row['總成本']
+            total_shares += row['股數']
+            stock_details.append({
+                'name': row['股票名稱'],
+                'code': row['股票代碼'],
+                'shares': int(row['股數']),
+                'avg_price': avg_cost,
+                'current_price': None,
+                'market_value': None,
+                'profit_loss': None,
+                'profit_percentage': None,
+                'has_price': False
+            })
+
+    # === 建立表格 Embed ===
+    embed = discord.Embed(
+        title=f"📊 {ctx.author.display_name} 的投資組合摘要",
+        color=discord.Color.blue(),
+        timestamp=datetime.now()
+    )
+
+    table_header = "股票代碼/名稱      股數    均價     現價     市值        損益       報酬率\n"
+    table_header += "─" * 80
+    table_rows = []
+
+    for stock in stock_details:
+        name_code = f"{stock['name']}({stock['code']})"
+        if stock['has_price']:
+            profit_emoji = "🟢" if stock['profit_loss'] >= 0 else "🔴"
+            row = (
+                f"{name_code:<16} "
+                f"{stock['shares']:>6,}股  "
+                f"${stock['avg_price']:>7.2f}  "
+                f"${stock['current_price']:>7.2f}  "
+                f"${stock['market_value']:>9,.2f}  "
+                f"{profit_emoji}${stock['profit_loss']:>+8,.2f}  "
+                f"{profit_emoji}{stock['profit_percentage']:>+6.2f}%"
+            )
+        else:
+            row = (
+                f"{name_code:<16} "
+                f"{stock['shares']:>6,}股  "
+                f"${stock['avg_price']:>7.2f}  "
+                f"   無現價    無市值    無損益    無報酬率"
+            )
+        table_rows.append(row)
+
+    # 總計
+    if total_value > 0:
+        profit_percentage = (total_profit_loss / total_cost) * 100 if total_cost > 0 else 0
+        profit_emoji = "🟢" if total_profit_loss >= 0 else "🔴"
+        total_avg_price = total_cost / total_shares if total_shares > 0 else 0
+        total_row = (
+            f"{'總計':<16} "
+            f"{total_shares:>6,}股  "
+            f"${total_avg_price:>7.2f}  "
+            f"{'':>7}  "
+            f"${total_value:>9,.2f}  "
+            f"{profit_emoji}${total_profit_loss:>+8,.2f}  "
+            f"{profit_emoji}{profit_percentage:>+6.2f}%"
+        )
+        table_rows.append("─" * 80)
+        table_rows.append(total_row)
+
+    embed.add_field(
+        name="📋 持股明細",
+        value=f"```\n{table_header}\n" + "\n".join(table_rows) + "\n```",
+        inline=False
+    )
+
+    embed.set_footer(
+        text="💡 使用 !summary <股票> <新成本> 調整平均成本",
+        icon_url=ctx.author.avatar.url if ctx.author.avatar else None
+    )
+
     await ctx.send(embed=embed)
+
+
 
 
 @bot.command(name="show")
