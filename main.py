@@ -244,8 +244,11 @@ async def _bothelp(ctx):
     embed.add_field(name="`!sell <股票> <股數> [價格]`",
                     value="賣出股票，可選填自訂價格進行損益結算。",
                     inline=False)
-    embed.add_field(name="`!summary [股票] [新成本]`",
-                    value="顯示庫存，或輸入股票與新成本來調整持有成本。",
+    embed.add_field(name="`!summary`",
+                    value="顯示您的庫存摘要，包括持有股數、平均成本與總市值。",
+                    inline=False)
+    embed.add_field(name="`!adjust_cost <股票> <新成本>`",
+                    value="調整您已持有股票的平均成本。",
                     inline=False)
     embed.add_field(name="`!show`", value="顯示最近 5 筆的操作紀錄。", inline=False)
     embed.add_field(name="`!profit`", value="計算並顯示您所有已實現的總損益。", inline=False)
@@ -257,7 +260,6 @@ async def _bothelp(ctx):
                     inline=False)
     embed.set_footer(text="請將 <...> 替換為實際的參數，[...] 為選擇性參數")
     await ctx.send(embed=embed)
-
 
 @bot.command(name="random")
 async def _random(ctx):
