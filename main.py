@@ -432,7 +432,7 @@ async def _sell(ctx,
 
     await ctx.send(embed=embed)
 
-@bot.command(name="summary_image")
+@bot.command(name="summary")
 async def summary_image(ctx):
     """
     生成黑底白字、使用 NotoSansCJK 的投資組合摘要圖片
@@ -490,7 +490,7 @@ async def summary_image(ctx):
 
     # --- 產生圖片設定 ---
     row_height = 50       # 行距加大
-    header_height = 100
+    header_height = 200
     footer_height = 80
     img_width = 1000
     img_height = header_height + len(rows)*row_height + footer_height
@@ -514,7 +514,7 @@ async def summary_image(ctx):
 
     # 表頭
     headers = ["股票", "股數", "均價", "現價", "市值", "損益", "報酬率"]
-    x_positions = [20, 300, 420, 540, 660, 800, 920]
+    x_positions = [20, 300, 420, 540, 660, 900, 1100]
     for x, h in zip(x_positions, headers):
         draw.text((x, 100), h, fill="white", font=font)
 
