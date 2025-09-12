@@ -432,7 +432,7 @@ async def _sell(ctx,
 
     await ctx.send(embed=embed)
 
-@bot.command(name="summary_image")
+@bot.command(name="summary")
 async def summary_image(ctx):
     user_id = str(ctx.author.id)
     create_user_csv_if_not_exists(user_id)
@@ -490,6 +490,8 @@ async def summary_image(ctx):
     total_profit_percentage = (total_profit / total_cost * 100) if total_cost > 0 else 0
 
     # ===== 自動計算圖片高度與欄位 =====
+    from PIL import Image, ImageDraw, ImageFont
+
     header_height = 50
     row_height = 30
     footer_height = 50
@@ -498,8 +500,10 @@ async def summary_image(ctx):
 
     img = Image.new("RGB", (img_width, img_height), color=(255, 255, 255))
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype("arial.ttf", 16)
-    bold_font = ImageFont.truetype("arial.ttf", 18)
+
+    # 使用內建字型，保證 Linux/GCP 可用
+    font = ImageFont.load_default()
+    bold_font = ImageFont.load_default()
 
     # 標題
     draw.text((10, 10), f"{ctx.author.display_name} 的投資組合摘要", fill="black", font=bold_font)
@@ -549,49 +553,10 @@ async def summary_image(ctx):
     draw.text((x_positions[6], y), f"{total_profit:+,.2f}", fill=total_color, font=bold_font)
     draw.text((x_positions[7], y), f"{total_profit_percentage:+.2f}%", fill=total_color, font=bold_font)
 
-    # 儲存圖片
+    # 儲存圖片並傳送
     img_path = "portfolio_summary.png"
     img.save(img_path)
     await ctx.send(file=discord.File(img_path))
-@bot.command(name="show")
-async def _show(ctx):
-    user_id = str(ctx.author.id)
-    create_user_csv_if_not_exists(user_id)
-
-    df_current = get_user_data(user_id)
-    operations_current = df_current[df_current['類別'] == '操作']
-
-    combined_ops = operations_current
-
-    # 若當前紀錄不足5筆，嘗試從歸檔資料補充
-    if len(operations_current) < 5:
-        needed = 5 - len(operations_current)
-        user_archive_dir = Path(user_id)
-
-        if user_archive_dir.is_dir():
-            archive_files = sorted(user_archive_dir.glob('*_archive.csv'),
-                                   reverse=True)
-            if archive_files:
-                latest_archive_path = archive_files[0]
-                df_archive = get_user_data(user_id,
-                                           file_path=str(latest_archive_path))
-                operations_archive = df_archive[df_archive['類別'] == '操作'].tail(
-                    needed)
-                combined_ops = pd.concat(
-                    [operations_archive, operations_current])
-
-    final_ops = combined_ops.tail(5)
-
-    if final_ops.empty:
-        await ctx.send("最近沒有任何操作紀錄。")
-        return
-
-    response = f"**{ctx.author.display_name} 的最近 5 筆操作紀錄：**\n```\n"
-    for _, row in final_ops.iterrows():
-        action = "買入" if row['股數'] > 0 else "賣出"
-        response += f"時間: {row['操作時間']}, 指令: {row['指令']}, 動作: {action}, 股票: {row['股票名稱']}({row['股票代碼']}), 股數: {abs(int(row['股數']))}\n"
-    response += "```"
-    await ctx.send(response)
 
 @bot.command(name="profit")
 async def _profit(ctx):
