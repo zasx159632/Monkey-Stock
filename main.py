@@ -432,173 +432,127 @@ async def _sell(ctx,
 
     await ctx.send(embed=embed)
 
-@bot.command(name="summary")
-async def _summary(ctx, stock_identifier: str = None, new_cost: float = None):
+@bot.command(name="summary_image")
+async def summary_image(ctx):
     user_id = str(ctx.author.id)
     create_user_csv_if_not_exists(user_id)
 
-    # === 成本調整邏輯 ===
-    if stock_identifier and new_cost:
-        if new_cost <= 0:
-            await ctx.send("❌ 新的成本必須是正數。")
-            return
-        stock_code, stock_name = get_stock_info(stock_identifier)
-        if not stock_code:
-            await ctx.send(f"❌ 在您的庫存中找不到股票 `{stock_identifier}`。")
-            return
-
-        df = get_user_data(user_id)
-        inventory = df[df['類別'] == '庫存']
-        stock_inventory = inventory[inventory['股票代碼'] == stock_code]
-        current_shares = stock_inventory['股數'].sum()
-
-        if current_shares > 0:
-            current_total_cost = stock_inventory['金額'].sum()
-            new_total_cost = new_cost * current_shares
-            cost_adjustment = new_total_cost - current_total_cost
-
-            log_to_user_csv(
-                user_id, "!summary (adjust)", "庫存",
-                stock_code, stock_name, 0, 0,
-                cost_adjustment
-            )
-            await ctx.send(
-                f"✅ 已將 **{stock_name}({stock_code})** 的平均成本調整為 **${new_cost:,.2f}**。"
-            )
-        else:
-            await ctx.send(
-                f"❌ 您目前未持有 **{stock_name}({stock_code})**，無法調整成本。"
-            )
-        return
-    elif stock_identifier or new_cost:
-        await ctx.send("❌ 參數錯誤！若要調整成本，必須同時提供 `股票代碼/名稱` 和 `新的平均成本`。")
-        return
-
-    # === 讀取庫存 ===
+    # 取得庫存
     df = get_user_data(user_id)
     inventory = df[df['類別'] == '庫存']
     if inventory.empty:
         await ctx.send("您的庫存目前是空的。")
         return
 
+    # 彙總資料
     summary_data = inventory.groupby(['股票代碼', '股票名稱']).agg(
         股數=('股數', 'sum'),
         總成本=('金額', 'sum')
     ).reset_index()
     summary_data = summary_data[summary_data['股數'] > 0]
-    if summary_data.empty:
-        await ctx.send("您的庫存目前是空的。")
-        return
 
-    total_cost = total_value = total_profit_loss = total_shares = 0
+    # 建立 stock_details 列表
     stock_details = []
+    total_shares = 0
+    total_cost = 0
+    total_value = 0
+    total_profit = 0
 
     for _, row in summary_data.iterrows():
-        current_price = get_stock_price(row['股票代碼'])
-        avg_cost = row['總成本'] / row['股數']
+        code = row['股票代碼']
+        name = row['股票名稱']
+        shares = int(row['股數'])
+        avg_cost = row['總成本'] / shares
+        current_price = get_stock_price(code)
+        if current_price <= 0:
+            current_price = 0
+        market_value = shares * current_price
+        profit_loss = market_value - row['總成本']
+        profit_percent = (profit_loss / row['總成本'] * 100) if row['總成本'] > 0 else 0
 
-        if current_price > 0:
-            current_value = row['股數'] * current_price
-            profit_loss = current_value - row['總成本']
-            profit_percentage = (profit_loss / row['總成本']) * 100
+        stock_details.append({
+            "code": code,
+            "name": name,
+            "shares": shares,
+            "avg_price": avg_cost,
+            "current_price": current_price,
+            "market_value": market_value,
+            "profit_loss": profit_loss,
+            "profit_percentage": profit_percent,
+            "has_price": current_price > 0
+        })
 
-            total_cost += row['總成本']
-            total_value += current_value
-            total_profit_loss += profit_loss
-            total_shares += row['股數']
+        total_shares += shares
+        total_cost += row['總成本']
+        total_value += market_value
+        total_profit += profit_loss
 
-            stock_details.append({
-                'name': row['股票名稱'],
-                'code': row['股票代碼'],
-                'shares': int(row['股數']),
-                'avg_price': avg_cost,
-                'current_price': current_price,
-                'market_value': current_value,
-                'profit_loss': profit_loss,
-                'profit_percentage': profit_percentage,
-                'has_price': True
-            })
-        else:
-            total_cost += row['總成本']
-            total_shares += row['股數']
-            stock_details.append({
-                'name': row['股票名稱'],
-                'code': row['股票代碼'],
-                'shares': int(row['股數']),
-                'avg_price': avg_cost,
-                'current_price': None,
-                'market_value': None,
-                'profit_loss': None,
-                'profit_percentage': None,
-                'has_price': False
-            })
+    total_profit_percentage = (total_profit / total_cost * 100) if total_cost > 0 else 0
 
-    # === 建立表格 Embed ===
-    embed = discord.Embed(
-        title=f"📊 {ctx.author.display_name} 的投資組合摘要",
-        color=discord.Color.blue(),
-        timestamp=datetime.now()
-    )
+    # ===== 自動計算圖片高度與欄位 =====
+    header_height = 50
+    row_height = 30
+    footer_height = 50
+    img_height = header_height + len(stock_details) * row_height + footer_height
+    img_width = 900
 
-    table_header = "股票代碼/名稱      股數    均價     現價     市值        損益       報酬率\n"
-    table_header += "─" * 80
-    table_rows = []
+    img = Image.new("RGB", (img_width, img_height), color=(255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    font = ImageFont.truetype("arial.ttf", 16)
+    bold_font = ImageFont.truetype("arial.ttf", 18)
 
+    # 標題
+    draw.text((10, 10), f"{ctx.author.display_name} 的投資組合摘要", fill="black", font=bold_font)
+
+    # 欄位百分比分配
+    margin = 20
+    available_width = img_width - margin * 2
+    col_widths = [
+        int(0.08 * available_width),  # 股票代碼
+        int(0.15 * available_width),  # 名稱
+        int(0.1 * available_width),   # 股數
+        int(0.1 * available_width),   # 均價
+        int(0.1 * available_width),   # 現價
+        int(0.15 * available_width),  # 市值
+        int(0.15 * available_width),  # 損益
+        int(0.12 * available_width),  # 報酬率
+    ]
+    x_positions = [margin]
+    for w in col_widths[:-1]:
+        x_positions.append(x_positions[-1] + w)
+
+    headers = ["股票代碼", "名稱", "股數", "均價", "現價", "市值", "損益", "報酬率"]
+    y = header_height
+    for i, header in enumerate(headers):
+        draw.text((x_positions[i], y), header, fill="black", font=bold_font)
+
+    # 每一行股票
+    y += row_height
     for stock in stock_details:
-        name_code = f"{stock['name']}({stock['code']})"
-        if stock['has_price']:
-            profit_emoji = "🟢" if stock['profit_loss'] >= 0 else "🔴"
-            row = (
-                f"{name_code:<16} "
-                f"{stock['shares']:>6,}股  "
-                f"${stock['avg_price']:>7.2f}  "
-                f"${stock['current_price']:>7.2f}  "
-                f"${stock['market_value']:>9,.2f}  "
-                f"{profit_emoji}${stock['profit_loss']:>+8,.2f}  "
-                f"{profit_emoji}{stock['profit_percentage']:>+6.2f}%"
-            )
-        else:
-            row = (
-                f"{name_code:<16} "
-                f"{stock['shares']:>6,}股  "
-                f"${stock['avg_price']:>7.2f}  "
-                f"   無現價    無市值    無損益    無報酬率"
-            )
-        table_rows.append(row)
+        draw.text((x_positions[0], y), stock["code"], fill="black", font=font)
+        draw.text((x_positions[1], y), stock["name"], fill="black", font=font)
+        draw.text((x_positions[2], y), f"{stock['shares']:,}", fill="black", font=font)
+        draw.text((x_positions[3], y), f"{stock['avg_price']:.2f}", fill="black", font=font)
+        draw.text((x_positions[4], y), f"{stock['current_price']:.2f}" if stock['has_price'] else "N/A", fill="black", font=font)
+        draw.text((x_positions[5], y), f"{stock['market_value']:,}" if stock['has_price'] else "N/A", fill="black", font=font)
+        profit_color = (0, 200, 0) if stock["profit_loss"] >= 0 else (255, 0, 0)
+        draw.text((x_positions[6], y), f"{stock['profit_loss']:+,.2f}" if stock['has_price'] else "N/A", fill=profit_color, font=font)
+        draw.text((x_positions[7], y), f"{stock['profit_percentage']:+.2f}%" if stock['has_price'] else "N/A", fill=profit_color, font=font)
+        y += row_height
 
     # 總計
-    if total_value > 0:
-        profit_percentage = (total_profit_loss / total_cost) * 100 if total_cost > 0 else 0
-        profit_emoji = "🟢" if total_profit_loss >= 0 else "🔴"
-        total_avg_price = total_cost / total_shares if total_shares > 0 else 0
-        total_row = (
-            f"{'總計':<16} "
-            f"{total_shares:>6,}股  "
-            f"${total_avg_price:>7.2f}  "
-            f"{'':>7}  "
-            f"${total_value:>9,.2f}  "
-            f"{profit_emoji}${total_profit_loss:>+8,.2f}  "
-            f"{profit_emoji}{profit_percentage:>+6.2f}%"
-        )
-        table_rows.append("─" * 80)
-        table_rows.append(total_row)
+    y += 10
+    draw.text((x_positions[0], y), "TOTAL", fill="black", font=bold_font)
+    draw.text((x_positions[2], y), f"{total_shares:,}", fill="black", font=bold_font)
+    draw.text((x_positions[5], y), f"{total_value:,}", fill="black", font=bold_font)
+    total_color = (0, 200, 0) if total_profit >= 0 else (255, 0, 0)
+    draw.text((x_positions[6], y), f"{total_profit:+,.2f}", fill=total_color, font=bold_font)
+    draw.text((x_positions[7], y), f"{total_profit_percentage:+.2f}%", fill=total_color, font=bold_font)
 
-    embed.add_field(
-        name="📋 持股明細",
-        value=f"```\n{table_header}\n" + "\n".join(table_rows) + "\n```",
-        inline=False
-    )
-
-    embed.set_footer(
-        text="💡 使用 !summary <股票> <新成本> 調整平均成本",
-        icon_url=ctx.author.avatar.url if ctx.author.avatar else None
-    )
-
-    await ctx.send(embed=embed)
-
-
-
-
+    # 儲存圖片
+    img_path = "portfolio_summary.png"
+    img.save(img_path)
+    await ctx.send(file=discord.File(img_path))
 @bot.command(name="show")
 async def _show(ctx):
     user_id = str(ctx.author.id)
