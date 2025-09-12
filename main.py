@@ -558,6 +558,41 @@ async def summary_image(ctx):
     img.save(file_path)
     await ctx.send(file=discord.File(file_path))
 
+# 從 !summary 中獨立出調整成本指令 by car 20250912_2346
+@bot.command(name="adjust_cost")
+async def adjust_cost(ctx, stock_identifier: str, new_cost: float):
+    user_id = str(ctx.author.id)
+    create_user_csv_if_not_exists(user_id)
+
+    if new_cost <= 0:
+        await ctx.send("❌ 新的成本必須是正數。")
+        return
+
+    stock_code, stock_name = get_stock_info(stock_identifier)
+    if not stock_code:
+        await ctx.send(f"❌ 在您的庫存中找不到股票 `{stock_identifier}`。")
+        return
+
+    df = get_user_data(user_id)
+    inventory = df[df['類別'] == '庫存']
+    stock_inventory = inventory[inventory['股票代碼'] == stock_code]
+    current_shares = stock_inventory['股數'].sum()
+
+    if current_shares > 0:
+        current_total_cost = stock_inventory['金額'].sum()
+        new_total_cost = new_cost * current_shares
+        cost_adjustment = new_total_cost - current_total_cost
+
+        log_to_user_csv(user_id, "!adjust_cost", "庫存",
+                        stock_code, stock_name, 0, 0,
+                        cost_adjustment)
+        await ctx.send(
+            f"✅ 已將 **{stock_name}({stock_code})** 的平均成本調整為 **${new_cost:,.2f}**。"
+        )
+    else:
+        await ctx.send(
+            f"❌ 您目前未持有 **{stock_name}({stock_code})**，無法調整成本。")
+
 @bot.command(name="profit")
 async def _profit(ctx):
     user_id = str(ctx.author.id)
