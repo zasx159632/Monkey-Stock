@@ -432,15 +432,14 @@ async def _sell(ctx,
 
     await ctx.send(embed=embed)
 
-@bot.command(name="summary_image")
+@bot.command(name="summary")
 async def summary_image(ctx):
     """
-    生成投資組合摘要圖片並傳送
+    生成投資組合摘要黑底白字圖片
     """
     import os
-    from datetime import datetime
     from PIL import Image, ImageDraw, ImageFont
-    import pandas as pd
+    from datetime import datetime
 
     user_id = str(ctx.author.id)
     create_user_csv_if_not_exists(user_id)
@@ -460,7 +459,6 @@ async def summary_image(ctx):
         await ctx.send("您的庫存目前是空的。")
         return
 
-    # 計算
     rows = []
     total_cost = total_value = total_profit = 0
     for _, row in summary_data.iterrows():
@@ -473,11 +471,11 @@ async def summary_image(ctx):
             rows.append([
                 f"{row['股票名稱']}({row['股票代碼']})",
                 f"{int(row['股數']):,}",
-                f"${avg_cost:,.2f}",
-                f"${current_price:,.2f}",
-                f"${current_value:,.2f}",
-                f"{'🟢' if profit_loss>=0 else '🔴'}${profit_loss:+,.2f}",
-                f"{'🟢' if profit_loss>=0 else '🔴'}{profit_pct:+.2f}%"
+                f"{avg_cost:,.2f}",
+                f"{current_price:,.2f}",
+                f"{current_value:,.2f}",
+                f"{profit_loss:+,.2f}",
+                f"{profit_pct:+.2f}%"
             ])
             total_cost += row['總成本']
             total_value += current_value
@@ -486,44 +484,45 @@ async def summary_image(ctx):
             rows.append([
                 f"{row['股票名稱']}({row['股票代碼']})",
                 f"{int(row['股數']):,}",
-                f"${avg_cost:,.2f}",
+                f"{avg_cost:,.2f}",
                 "N/A", "N/A", "N/A", "N/A"
             ])
             total_cost += row['總成本']
 
-    # 動態高度
-    row_height = 40
-    header_height = 80
-    footer_height = 60
-    img_width = 900
+    # -------- 產生圖片設定 --------
+    row_height = 45   # 行距加大
+    header_height = 90
+    footer_height = 70
+    img_width = 1000
     img_height = header_height + len(rows)*row_height + footer_height
 
-    # 建立圖片
-    img = Image.new("RGB", (img_width, img_height), (255, 255, 255))
+    # 黑底白字
+    img = Image.new("RGB", (img_width, img_height), (0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    # 指定中文字型 (Ubuntu / Debian)
-    font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+    # 等寬中文字型 (Noto Sans Mono CJK)
+    font_path = "/usr/share/fonts/opentype/noto/NotoSansMonoCJK-Regular.ttc"
     if not os.path.exists(font_path):
-        # 如果找不到字型，可替換成自己系統的字型路徑
-        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-    font = ImageFont.truetype(font_path, 22)
-    bold_font = ImageFont.truetype(font_path, 26)
+        # 如果沒有，嘗試另一個常見的等寬字型
+        font_path = "/usr/share/fonts/opentype/noto/NotoSansMono-Regular.ttf"
+    font = ImageFont.truetype(font_path, 28)
+    bold_font = ImageFont.truetype(font_path, 34)
 
     # 標題
-    draw.text((20, 20), f"📊 {ctx.author.display_name} 的投資組合摘要", fill="black", font=bold_font)
+    title = f"📊 {ctx.author.display_name} 的投資組合摘要"
+    draw.text((20, 20), title, fill="white", font=bold_font)
 
     # 表頭
     headers = ["股票", "股數", "均價", "現價", "市值", "損益", "報酬率"]
-    x_positions = [20, 280, 380, 480, 580, 700, 820]
+    x_positions = [20, 300, 420, 540, 660, 800, 910]
     for x, h in zip(x_positions, headers):
-        draw.text((x, 70), h, fill="black", font=font)
+        draw.text((x, 90), h, fill="white", font=font)
 
-    # 畫表格內容
+    # 表格內容
     y = header_height
     for r in rows:
         for x, text in zip(x_positions, r):
-            draw.text((x, y), text, fill="black", font=font)
+            draw.text((x, y), text, fill="white", font=font)
         y += row_height
 
     # 總計
@@ -536,9 +535,9 @@ async def summary_image(ctx):
             f"{emoji}損益:${total_profit:+,.2f}  "
             f"{emoji}報酬率:{profit_pct:+.2f}%"
         )
-        draw.text((20, y + 20), total_text, fill="black", font=bold_font)
+        draw.text((20, y + 20), total_text, fill="white", font=bold_font)
 
-    # 存檔並發送
+    # 存檔 & 傳送
     file_path = "portfolio_summary.png"
     img.save(file_path)
     await ctx.send(file=discord.File(file_path))
