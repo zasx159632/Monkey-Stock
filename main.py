@@ -128,8 +128,8 @@ def get_stock_price(stock_id: str) -> float:
                 price_str = msg[0].get('o')  # 若無成交價則取開盤價
                 if price_str in (None,'-',''):
                     peice_str = msg[0].get('y') #若無成交價也無開盤價，抓取昨收價
-            if price_str and price_str not in (None, '-', '', '無資料'):
-                return round(float(price_str), 2)
+                if price_str and price_str not in (None, '-', '', '無資料'):
+                    return round(float(price_str), 2)
         return 0.0
     except requests.exceptions.RequestException as e:
         print(f"取得 {stock_id} 股價時網路請求失敗: {e}")
