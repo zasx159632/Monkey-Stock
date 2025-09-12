@@ -432,131 +432,117 @@ async def _sell(ctx,
 
     await ctx.send(embed=embed)
 
-@bot.command(name="summary")
+@bot.command(name="summary_image")
 async def summary_image(ctx):
+    """
+    生成投資組合摘要圖片並傳送
+    """
+    import os
+    from datetime import datetime
+    from PIL import Image, ImageDraw, ImageFont
+    import pandas as pd
+
     user_id = str(ctx.author.id)
     create_user_csv_if_not_exists(user_id)
-
-    # 取得庫存
     df = get_user_data(user_id)
     inventory = df[df['類別'] == '庫存']
     if inventory.empty:
         await ctx.send("您的庫存目前是空的。")
         return
 
-    # 彙總資料
+    # 匯總資料
     summary_data = inventory.groupby(['股票代碼', '股票名稱']).agg(
         股數=('股數', 'sum'),
         總成本=('金額', 'sum')
     ).reset_index()
     summary_data = summary_data[summary_data['股數'] > 0]
+    if summary_data.empty:
+        await ctx.send("您的庫存目前是空的。")
+        return
 
-    # 建立 stock_details 列表
-    stock_details = []
-    total_shares = 0
-    total_cost = 0
-    total_value = 0
-    total_profit = 0
-
+    # 計算
+    rows = []
+    total_cost = total_value = total_profit = 0
     for _, row in summary_data.iterrows():
-        code = row['股票代碼']
-        name = row['股票名稱']
-        shares = int(row['股數'])
-        avg_cost = row['總成本'] / shares
-        current_price = get_stock_price(code)
-        if current_price <= 0:
-            current_price = 0
-        market_value = shares * current_price
-        profit_loss = market_value - row['總成本']
-        profit_percent = (profit_loss / row['總成本'] * 100) if row['總成本'] > 0 else 0
+        current_price = get_stock_price(row['股票代碼'])
+        avg_cost = row['總成本'] / row['股數']
+        if current_price > 0:
+            current_value = row['股數'] * current_price
+            profit_loss = current_value - row['總成本']
+            profit_pct = profit_loss / row['總成本'] * 100
+            rows.append([
+                f"{row['股票名稱']}({row['股票代碼']})",
+                f"{int(row['股數']):,}",
+                f"${avg_cost:,.2f}",
+                f"${current_price:,.2f}",
+                f"${current_value:,.2f}",
+                f"{'🟢' if profit_loss>=0 else '🔴'}${profit_loss:+,.2f}",
+                f"{'🟢' if profit_loss>=0 else '🔴'}{profit_pct:+.2f}%"
+            ])
+            total_cost += row['總成本']
+            total_value += current_value
+            total_profit += profit_loss
+        else:
+            rows.append([
+                f"{row['股票名稱']}({row['股票代碼']})",
+                f"{int(row['股數']):,}",
+                f"${avg_cost:,.2f}",
+                "N/A", "N/A", "N/A", "N/A"
+            ])
+            total_cost += row['總成本']
 
-        stock_details.append({
-            "code": code,
-            "name": name,
-            "shares": shares,
-            "avg_price": avg_cost,
-            "current_price": current_price,
-            "market_value": market_value,
-            "profit_loss": profit_loss,
-            "profit_percentage": profit_percent,
-            "has_price": current_price > 0
-        })
-
-        total_shares += shares
-        total_cost += row['總成本']
-        total_value += market_value
-        total_profit += profit_loss
-
-    total_profit_percentage = (total_profit / total_cost * 100) if total_cost > 0 else 0
-
-    # ===== 自動計算圖片高度與欄位 =====
-    from PIL import Image, ImageDraw, ImageFont
-
-    header_height = 50
-    row_height = 30
-    footer_height = 50
-    img_height = header_height + len(stock_details) * row_height + footer_height
+    # 動態高度
+    row_height = 40
+    header_height = 80
+    footer_height = 60
     img_width = 900
+    img_height = header_height + len(rows)*row_height + footer_height
 
-    img = Image.new("RGB", (img_width, img_height), color=(255, 255, 255))
+    # 建立圖片
+    img = Image.new("RGB", (img_width, img_height), (255, 255, 255))
     draw = ImageDraw.Draw(img)
 
-    # 使用內建字型，保證 Linux/GCP 可用
-    font = ImageFont.load_default()
-    bold_font = ImageFont.load_default()
+    # 指定中文字型 (Ubuntu / Debian)
+    font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+    if not os.path.exists(font_path):
+        # 如果找不到字型，可替換成自己系統的字型路徑
+        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    font = ImageFont.truetype(font_path, 22)
+    bold_font = ImageFont.truetype(font_path, 26)
 
     # 標題
-    draw.text((10, 10), f"{ctx.author.display_name} 的投資組合摘要", fill="black", font=bold_font)
+    draw.text((20, 20), f"📊 {ctx.author.display_name} 的投資組合摘要", fill="black", font=bold_font)
 
-    # 欄位百分比分配
-    margin = 20
-    available_width = img_width - margin * 2
-    col_widths = [
-        int(0.08 * available_width),  # 股票代碼
-        int(0.15 * available_width),  # 名稱
-        int(0.1 * available_width),   # 股數
-        int(0.1 * available_width),   # 均價
-        int(0.1 * available_width),   # 現價
-        int(0.15 * available_width),  # 市值
-        int(0.15 * available_width),  # 損益
-        int(0.12 * available_width),  # 報酬率
-    ]
-    x_positions = [margin]
-    for w in col_widths[:-1]:
-        x_positions.append(x_positions[-1] + w)
+    # 表頭
+    headers = ["股票", "股數", "均價", "現價", "市值", "損益", "報酬率"]
+    x_positions = [20, 280, 380, 480, 580, 700, 820]
+    for x, h in zip(x_positions, headers):
+        draw.text((x, 70), h, fill="black", font=font)
 
-    headers = ["股票代碼", "名稱", "股數", "均價", "現價", "市值", "損益", "報酬率"]
+    # 畫表格內容
     y = header_height
-    for i, header in enumerate(headers):
-        draw.text((x_positions[i], y), header, fill="black", font=bold_font)
-
-    # 每一行股票
-    y += row_height
-    for stock in stock_details:
-        draw.text((x_positions[0], y), stock["code"], fill="black", font=font)
-        draw.text((x_positions[1], y), stock["name"], fill="black", font=font)
-        draw.text((x_positions[2], y), f"{stock['shares']:,}", fill="black", font=font)
-        draw.text((x_positions[3], y), f"{stock['avg_price']:.2f}", fill="black", font=font)
-        draw.text((x_positions[4], y), f"{stock['current_price']:.2f}" if stock['has_price'] else "N/A", fill="black", font=font)
-        draw.text((x_positions[5], y), f"{stock['market_value']:,}" if stock['has_price'] else "N/A", fill="black", font=font)
-        profit_color = (0, 200, 0) if stock["profit_loss"] >= 0 else (255, 0, 0)
-        draw.text((x_positions[6], y), f"{stock['profit_loss']:+,.2f}" if stock['has_price'] else "N/A", fill=profit_color, font=font)
-        draw.text((x_positions[7], y), f"{stock['profit_percentage']:+.2f}%" if stock['has_price'] else "N/A", fill=profit_color, font=font)
+    for r in rows:
+        for x, text in zip(x_positions, r):
+            draw.text((x, y), text, fill="black", font=font)
         y += row_height
 
     # 總計
-    y += 10
-    draw.text((x_positions[0], y), "TOTAL", fill="black", font=bold_font)
-    draw.text((x_positions[2], y), f"{total_shares:,}", fill="black", font=bold_font)
-    draw.text((x_positions[5], y), f"{total_value:,}", fill="black", font=bold_font)
-    total_color = (0, 200, 0) if total_profit >= 0 else (255, 0, 0)
-    draw.text((x_positions[6], y), f"{total_profit:+,.2f}", fill=total_color, font=bold_font)
-    draw.text((x_positions[7], y), f"{total_profit_percentage:+.2f}%", fill=total_color, font=bold_font)
+    if total_cost > 0:
+        profit_pct = total_profit / total_cost * 100
+        emoji = "🟢" if total_profit >= 0 else "🔴"
+        total_text = (
+            f"總計  股數:{summary_data['股數'].sum():,}  "
+            f"市值:${total_value:,.2f}  "
+            f"{emoji}損益:${total_profit:+,.2f}  "
+            f"{emoji}報酬率:{profit_pct:+.2f}%"
+        )
+        draw.text((20, y + 20), total_text, fill="black", font=bold_font)
 
-    # 儲存圖片並傳送
-    img_path = "portfolio_summary.png"
-    img.save(img_path)
-    await ctx.send(file=discord.File(img_path))
+    # 存檔並發送
+    file_path = "portfolio_summary.png"
+    img.save(file_path)
+    await ctx.send(file=discord.File(file_path))
+
 
 @bot.command(name="profit")
 async def _profit(ctx):
