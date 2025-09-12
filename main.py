@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import requests
 import asyncio
 from pathlib import Path  # 引入 pathlib 方便處理路徑
+from PIL import Image, ImageDraw, ImageFont # 用於製作 summary 圖表 by car 20250912_2318
 #最底部新增每月將舊的資料開資料夾個別儲存降低使用中資料的複雜度，但最後寫入格式八成有點問題... by za 20250910_0044
 # ---------- 設定 ----------
 load_dotenv()
@@ -437,8 +438,6 @@ async def summary_image(ctx):
     """
     生成黑底白字、使用 NotoSansCJK 的投資組合摘要圖片
     """
-    import os
-    from PIL import Image, ImageDraw, ImageFont
 
     user_id = str(ctx.author.id)
     create_user_csv_if_not_exists(user_id)
