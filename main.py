@@ -542,6 +542,131 @@ async def summary_image(ctx):
     img.save(file_path)
     await ctx.send(file=discord.File(file_path))
 
+@bot.command(name="summary_test")
+async def summary_image(ctx):
+    user_id = str(ctx.author.id)
+    create_user_csv_if_not_exists(user_id)
+    df = get_user_data(user_id)
+    inventory = df[df['類別'] == '庫存']
+
+    if inventory.empty:
+        await ctx.send("您的庫存目前是空的。")
+        return
+
+    # 匯總資料
+    summary_data = inventory.groupby(['股票代碼', '股票名稱']).agg(
+        股數=('股數', 'sum'),
+        總成本=('金額', 'sum')
+    ).reset_index()
+    summary_data = summary_data[summary_data['股數'] > 0]
+
+    if summary_data.empty:
+        await ctx.send("您的庫存目前是空的。")
+        return
+
+    # 生成表格資料
+    rows = []
+    total_cost = total_value = total_profit = 0
+    for _, row in summary_data.iterrows():
+        current_price = get_stock_price(row['股票代碼'])
+        avg_cost = row['總成本'] / row['股數']
+        if current_price > 0:
+            current_value = row['股數'] * current_price
+            profit_loss = current_value - row['總成本']
+            profit_pct = profit_loss / row['總成本'] * 100
+            rows.append([
+                f"{row['股票名稱']}({row['股票代碼']})",
+                f"{int(row['股數']):,}",
+                f"{avg_cost:,.2f}",
+                f"{current_price:,.2f}",
+                f"{current_value:,.2f}",
+                f"{profit_loss:+,.2f}",
+                f"{profit_pct:+.2f}%"
+            ])
+            total_cost += row['總成本']
+            total_value += current_value
+            total_profit += profit_loss
+        else:
+            rows.append([
+                f"{row['股票名稱']}({row['股票代碼']})",
+                f"{int(row['股數']):,}",
+                f"{avg_cost:,.2f}",
+                "N/A", "N/A", "N/A", "N/A"
+            ])
+            total_cost += row['總成本']
+
+    # --- 產生圖片設定 ---
+    row_height = 50
+    header_height = 200
+    footer_height = 80
+    img_width = 1200
+    img_height = header_height + len(rows)*row_height + footer_height
+
+    img = Image.new("RGB", (img_width, img_height), (0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+    if not os.path.exists(font_path):
+        await ctx.send("❌ 找不到 NotoSansCJK 字型，請先安裝 fonts-noto-cjk")
+        return
+
+    font = ImageFont.truetype(font_path, 28)
+    bold_font = ImageFont.truetype(font_path, 34)
+
+    # 標題
+    draw.text((20, 20), f"📊 {ctx.author.display_name} 的投資組合摘要",
+              fill="white", font=bold_font)
+
+    # 表頭與欄位設定
+    headers = ["股票", "股數", "均價", "現價", "市值", "損益", "報酬率"]
+    x_positions = [20, 250, 370, 490, 610, 750, 900]
+    col_widths  = [230, 120, 120, 120, 140, 150, 120]
+
+    # 畫表頭 (置中)
+    for x, w, h in zip(x_positions, col_widths, headers):
+        text_width = draw.textlength(h, font=font)
+        draw.text((x + (w - text_width)/2, 100), h, fill="white", font=font)
+
+    # 表格內容
+    y = header_height
+    for r in rows:
+        for i, text in enumerate(r):
+            if i == 0:  # 股票名稱置中
+                text_width = draw.textlength(text, font=font)
+                draw.text((x_positions[i] + (col_widths[i] - text_width)/2, y),
+                          text, fill="white", font=font)
+            else:  # 數字靠右
+                # 損益與報酬率顯示紅綠
+                if i in [5, 6] and text != "N/A":
+                    value = float(text.replace(",", "").replace("%", ""))
+                    color = "green" if value >= 0 else "red"
+                else:
+                    color = "white"
+                text_width = draw.textlength(text, font=font)
+                draw.text((x_positions[i] + col_widths[i] - text_width, y),
+                          text, fill=color, font=font)
+        y += row_height
+
+    # 總計
+    if total_cost > 0:
+        profit_pct = total_profit / total_cost * 100
+        total_shares = summary_data['股數'].sum()
+
+        # 前半段文字 (白色)
+        prefix_text = f"總計  股數:{total_shares:,}  市值:${total_value:,.2f}  "
+        draw.text((20, y + 20), prefix_text, fill="white", font=bold_font)
+
+        # 後半段文字 (損益與報酬率顏色)
+        profit_text = f"損益:${total_profit:+,.2f}  報酬率:{profit_pct:+.2f}%"
+        profit_color = "green" if total_profit >= 0 else "red"
+        profit_width = draw.textlength(profit_text, font=bold_font)
+        draw.text((img_width - 20 - profit_width, y + 20), profit_text, fill=profit_color, font=bold_font)
+
+    # 存檔並傳送
+    file_path = "portfolio_summary.png"
+    img.save(file_path)
+    await ctx.send(file=discord.File(file_path))
+
 @bot.command(name="profit")
 async def _profit(ctx):
     user_id = str(ctx.author.id)
