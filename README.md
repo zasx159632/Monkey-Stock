@@ -1,4 +1,4 @@
-# Monkey-Market-MavenEven 
+# Monkey-Market-Maven 
 A group of code-illiterate fun-seekers dream of building a virtual trading bot using only AI. They know nothing about programming, have no idea how stock markets work, but are armed with memes, curiosity, and reckless optimism. Chaos, laughter, and unexpected “did the bot just buy 10,000 shares of bananas?” moments are guaranteed.
 
 # 猴子市場專家
