@@ -32,7 +32,8 @@ pending_trades = {}
 stock_data = {}
 monkey_sell_state = {}
 is_archiving = False  # 用於標記是否正在進行每月歸檔
-
+handing_fee = 0.001425 #券商手續費 0.1425%
+ST_tax = 0.003 #證券交易稅 0.3% 
 
 # ---------- 輔助函式 ----------
 def load_stock_data():
@@ -186,9 +187,15 @@ async def on_message(message):
             stock_code, stock_name, shares_to_sell, avg_cost = state_data[
                 "stock_code"], state_data["stock_name"], state_data[
                     "shares_to_sell"], state_data["average_cost"]
-            sell_amount = round(shares_to_sell * sell_price, 2)
-            profit_loss = round((sell_price - avg_cost) * shares_to_sell, 2)
+            
+                        
+            if round(sell_price * shares_to_sell * handing_fee ,2) < 20:
+                sell_amount = round(sell_price - (avg_cost + (sell_price * ST_tax) + 20), 2)
+            else:
+                sell_amount = round(sell_price - (avg_cost + (sell_price * (handing_fee + ST_tax))), 2) #新增賣出含手續費&證交稅計算，手續費低於20元以20元計  za 250919.1901
 
+            profit_loss = round(sell_price * shares_to_sell - sell_amount , 2)
+            
             log_to_user_csv(str(user_id), "!monkey", "庫存", stock_code,
                             stock_name, -shares_to_sell, sell_price,
                             -sell_amount)
@@ -205,7 +212,7 @@ async def on_message(message):
                             sell_amount,
                             profit_loss=profit_loss)
             await message.channel.send(
-                f"🙈 **賣出！** 猴子已遵照您的指示賣出 **{stock_name}({stock_code})**！")
+                f"🙈 **賣出！** 猴子已遵照您的指示賣出 **{stock_name}({stock_code})**！ 總計 **{sell_amount}** 元，實現損益共 **{profit_loss}** 元。")
         except ValueError:
             await message.channel.send("格式錯誤，請輸入有效的數字價格：", delete_after=10)
         except Exception as e:
@@ -238,7 +245,7 @@ async def _bothelp(ctx):
                     value="確認由 `!random` 產生的交易，執行買入。",
                     inline=False)
     embed.add_field(name="`!rn`", value="取消由 `!random` 產生的交易。", inline=False)
-    embed.add_field(name="`!buy <股票> <股數>`",
+    embed.add_field(name="`!buy <股票> <股數> [價格]`",
                     value="買入指定數量的特定股票。",
                     inline=False)
     embed.add_field(name="`!sell <股票> <股數> [價格]`",
@@ -303,7 +310,14 @@ async def _random(ctx):
 async def _ry(ctx):
     user_id = str(ctx.author.id)
     if user_id in pending_trades:
+
         trade = pending_trades.pop(user_id)
+        
+        if round(trade["shares"] * trade["price"] * handing_fee ,2) < 20:
+            trade["amount"] = round(trade["shares"] * trade["price"] + 20, 2) 
+        else:
+            trade["amount"] = round(trade["shares"] * trade["price"] * (1 + handing_fee), 2) #新增買入含手續費計算，手續費低於20元以20元計 ( za 250919.1925
+        
         log_to_user_csv(user_id, "!random -> !ry", "庫存", trade["stock_code"],
                         trade["stock_name"], trade["shares"], trade["price"],
                         trade["amount"])
@@ -328,7 +342,7 @@ async def _rn(ctx):
 
 
 @bot.command(name="buy")
-async def _buy(ctx, stock_identifier: str, shares_to_buy: int):
+async def _buy(ctx, stock_identifier: str, shares_to_buy: int, custom_price: float = None):
     user_id = str(ctx.author.id)
     create_user_csv_if_not_exists(user_id)
     stock_code, stock_name = get_stock_info(stock_identifier)
@@ -342,13 +356,27 @@ async def _buy(ctx, stock_identifier: str, shares_to_buy: int):
     if current_price <= 0:
         await ctx.send(f"❌ 無法取得 **{stock_name}({stock_code})** 的即時股價，無法完成購買。")
         return
-    buy_amount = round(shares_to_buy * current_price, 2)
+        
+
+    if custom_price is not None:
+        current_price = custom_price
+        price_source_text = "(使用自訂價格)"
+    else:
+        current_price = get_stock_price(stock_code)
+        price_source_text = "(使用即時市價)"
+    #新增買入可自訂價格 za 250919.1734
+
+    if round(shares_to_buy * current_price * handing_fee ,2) < 20:
+        buy_amount = round(shares_to_buy * current_price + 20, 2) 
+    else:
+        buy_amount = round(shares_to_buy * current_price * (1 + handing_fee), 2) #新增買入含手續費計算，手續費低於20元以20元計 ( za 250919.1743
+    
     log_to_user_csv(user_id, "!buy", "庫存", stock_code, stock_name,
                     shares_to_buy, current_price, buy_amount)
     log_to_user_csv(user_id, "!buy", "操作", stock_code, stock_name,
                     shares_to_buy, current_price, buy_amount)
     await ctx.send(
-        f"✅ **購買成功！** 您已購買了 {shares_to_buy} 股 **{stock_name}({stock_code})** ，買入股價為 **{current_price}** 元。"
+        f"✅ **購買成功！** 您已購買了 {shares_to_buy} 股 **{stock_name}({stock_code})** ，買入股價為 **{current_price}** 元 ，總計 **{buy_amount}** 元。" #新增總計成本 za 250919.1743
     )
 
 
@@ -401,11 +429,17 @@ async def _sell(ctx,
         await ctx.send(f"❌ 無法取得 **{stock_name}({stock_code})** 的有效股價，無法完成賣出。")
         return
 
+
+
     total_cost = stock_inventory['金額'].sum()
     average_cost_price = total_cost / current_shares
-    sell_amount = round(shares_to_sell * average_cost_price, 2)
-    profit_loss = round((current_price - average_cost_price) * shares_to_sell,
-                        2)
+    
+    if round(shares_to_sell * average_cost_price * handing_fee ,2) < 20:
+        sell_amount = round(shares_to_sell * average_cost_price * (1 + ST_tax) + 20, 2)
+    else:
+        sell_amount = round(shares_to_sell * average_cost_price * (1 + handing_fee + ST_tax), 2) #新增賣出含手續費&證交稅計算，手續費低於20元以20元計  za 250919.1820
+
+    profit_loss = round(current_price * shares_to_sell - sell_amount , 2)
 
     log_to_user_csv(user_id, "!sell", "庫存", stock_code, stock_name,
                     -shares_to_sell, current_price, -sell_amount)
@@ -465,7 +499,11 @@ async def summary_image(ctx):
         avg_cost = row['總成本'] / row['股數']
         if current_price > 0:
             current_value = row['股數'] * current_price
-            profit_loss = current_value - row['總成本']
+            if round(current_value * handing_fee ,2) < 20:
+                profit_loss = round(current_value - (row['總成本'] + (current_value * ST_tax) + 20), 2)
+            else:
+                profit_loss = round(current_value - (row['總成本'] + (current_value * (handing_fee + ST_tax))), 2) #新增賣出含手續費&證交稅計算，手續費低於20元以20元計  za 250919.1840
+            
             profit_pct = profit_loss / row['總成本'] * 100
             rows.append([
                 f"{row['股票名稱']}({row['股票代碼']})",
@@ -660,10 +698,10 @@ async def _monkey(ctx, *args):
 
     # (參數驗證與權重調整邏輯與前版相同)
     # ...
-    if user_id in monkey_sell_state:
-        await ctx.send("您已在等待輸入賣出價格的狀態，請先完成操作。")
-        return
-    # ... (參數驗證與冷卻時間檢查，與前一版本相同)
+    #if user_id in monkey_sell_state:
+    #    await ctx.send("您已在等待輸入賣出價格的狀態，請先完成操作。")
+    #    return
+    # ... (參數驗證與冷卻時間檢查，與前一版本相同) 這區間應該重複了? 先註解掉 za 250919.1847
     min_amount, max_amount = 5000, 100000
     if len(args) == 2:
         try:
@@ -691,7 +729,7 @@ async def _monkey(ctx, *args):
     current_weights = MONKEY_WEIGHTS.copy()
     if not has_inventory:
         current_weights["sell"] = 0
-        current_weights["hold"] = 0  # 如果沒有庫存，買入權重也設為 0 by za 20250909_2248
+        current_weights["hold"] = 0  # 如果沒有庫存，賣出/持有權重設為 0 by za 20250909_2248
     chosen_action = random.choices(list(current_weights.keys()),
                                    weights=list(current_weights.values()),
                                    k=1)[0]
@@ -711,13 +749,18 @@ async def _monkey(ctx, *args):
         if shares == 0:
             await ctx.send(f"猴子想用約 {amount:,} 元買 **{stock_name}**，但錢不夠，只好放棄。")
             return
-        buy_amount = round(shares * stock_price, 2)
+        
+        if round(shares * stock_price * handing_fee ,2) < 20:
+            buy_amount = round(shares * stock_price * (1 + ST_tax) + 20), 2)
+        else:
+            buy_amount = round(shares * stock_price * (1 + handing_fee + ST_tax), 2) #新增買入含手續費計算，手續費低於20元以20元計  za 250919.1840
+        
         log_to_user_csv(str(user_id), "!monkey", "庫存", stock_code, stock_name,
                         shares, stock_price, buy_amount)
         log_to_user_csv(str(user_id), "!monkey", "操作", stock_code, stock_name,
                         shares, stock_price, buy_amount)
         await ctx.send(
-            f"🐵 **買入！** 猴子幫您買了 **{shares}** 股的 **{stock_name}({stock_code})**！"
+            f"🐵 **買入！** 猴子幫您買了 **{shares}** 股的 **{stock_name}({stock_code})**，股價為 **{stock_price}** ，總計 **{buy_amount}** 元！"
         )
 
     elif chosen_action == "hold":
