@@ -14,6 +14,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from database.schema import TradingDatabase
 from utils import stock_utils
+stock_data = stock_utils.stock_data
 
 # Fee constants
 HANDLING_FEE = 0.001425
@@ -299,3 +300,4 @@ async def setup(bot: commands.Bot):
     """Required function to load the cog."""
 
     await bot.add_cog(MonkeyCog(bot))
+
