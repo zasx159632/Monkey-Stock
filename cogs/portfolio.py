@@ -15,7 +15,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from database.schema import TradingDatabase
 from utils import stock_utils
-
+stock_data = stock_utils.stock_data
 # For image generation (if PIL is available)
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -355,3 +355,4 @@ async def setup(bot: commands.Bot):
     """Required function to load the cog."""
 
     await bot.add_cog(PortfolioCog(bot))
+
