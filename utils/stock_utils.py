@@ -14,6 +14,10 @@ stock_data = {}
 # Constants
 STOCK_LIST_FILE = "./上市股票.csv"
 
+# Constants - 使用絕對路徑確保從專案根目錄讀取
+PROJECT_ROOT = Path(__file__).parent.parent  # 從 utils/ 往上到專案根目錄
+STOCK_LIST_FILE = PROJECT_ROOT / "上市股票.csv"
+
 def load_stock_data() -> None:
     """
     Load stock code and names from CSV file into memory.
@@ -145,3 +149,4 @@ def get_random_stocks(count: int = 1) -> list:
     codes = random.sample(list(stock_data.keys()), count)
 
     return [(code, stock_data[code]) for code in codes]
+
