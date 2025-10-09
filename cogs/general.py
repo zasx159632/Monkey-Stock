@@ -13,7 +13,7 @@ class GeneralCog(commands.Cog):
         self.bot = bot
     
     @commands.command(name="bothelp")
-    async def bot_help(self, ctx: commands.Context):
+    async def bothelp_command(self, ctx: commands.Context):
         """
         Display comprehensive help for all bot commands.
         """
@@ -105,7 +105,7 @@ class GeneralCog(commands.Cog):
         await ctx.send(f"🏓 Pong! 延遲: {latency}ms")
     
     @commands.command(name="info")
-    async def bot_info(self, ctx: commands.Context):
+    async def info_command(self, ctx: commands.Context):
         """Display bot information."""
         embed = discord.Embed(
             title="🤖 Monkey Market Maven",
@@ -143,4 +143,5 @@ class GeneralCog(commands.Cog):
 
 async def setup(bot: commands.Bot):
     """Required function to load the cog."""
+
     await bot.add_cog(GeneralCog(bot))
