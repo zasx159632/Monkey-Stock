@@ -12,7 +12,7 @@ from typing import Tuple, Optional
 stock_data = {}
 
 # Constants
-STOCK_LIST_FILE = "上市股票.csv"
+STOCK_LIST_FILE = "./上市股票.csv"
 
 def load_stock_data() -> None:
     """
@@ -143,4 +143,5 @@ def get_random_stocks(count: int = 1) -> list:
         count = len(stock_data)
     
     codes = random.sample(list(stock_data.keys()), count)
+
     return [(code, stock_data[code]) for code in codes]
