@@ -7,6 +7,8 @@ These functions remain unchanged as they rely on external CSV files and APIs.
 import csv
 import requests
 from typing import Tuple, Optional
+from pathlib import Path
+import os
 
 # Global stock data cache
 stock_data = {}
@@ -149,4 +151,5 @@ def get_random_stocks(count: int = 1) -> list:
     codes = random.sample(list(stock_data.keys()), count)
 
     return [(code, stock_data[code]) for code in codes]
+
 
