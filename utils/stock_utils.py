@@ -13,9 +13,6 @@ import os
 # Global stock data cache
 stock_data = {}
 
-# Constants
-STOCK_LIST_FILE = "./上市股票.csv"
-
 # Constants - 使用絕對路徑確保從專案根目錄讀取
 PROJECT_ROOT = Path(__file__).parent.parent  # 從 utils/ 往上到專案根目錄
 STOCK_LIST_FILE = PROJECT_ROOT / "上市股票.csv"
@@ -151,5 +148,6 @@ def get_random_stocks(count: int = 1) -> list:
     codes = random.sample(list(stock_data.keys()), count)
 
     return [(code, stock_data[code]) for code in codes]
+
 
 
