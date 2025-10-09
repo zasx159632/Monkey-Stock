@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from database.schema import TradingDatabase
-from utils.stock_utils import get_stock_info, get_stock_price
+from utils import stock_utils
 
 # For image generation (if PIL is available)
 try:
@@ -353,4 +353,5 @@ class PortfolioCog(commands.Cog):
 
 async def setup(bot: commands.Bot):
     """Required function to load the cog."""
+
     await bot.add_cog(PortfolioCog(bot))
