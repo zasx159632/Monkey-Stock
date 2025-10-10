@@ -15,7 +15,6 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from database.schema import TradingDatabase
 from utils import stock_utils
-stock_data = stock_utils.stock_data
 
 # Fee constants
 HANDLING_FEE = 0.001425  # 0.1425%
@@ -64,7 +63,7 @@ class TradingCog(commands.Cog):
         """
         user_id = str(ctx.author.id)
         
-        if not stock_data:
+        if not stock_utils.stock_data:
             await ctx.send("❌ 股票資料未載入，無法執行隨機選股。")
             return
         
@@ -75,8 +74,8 @@ class TradingCog(commands.Cog):
             return
         
         # Random selection
-        stock_code, stock_name = random.choice(list(stock_data.items()))
-        stock_price = get_stock_price(stock_code)
+        stock_code, stock_name = random.choice(list(stock_utils.stock_data.items()))
+        stock_price = stock_utils.get_stock_price(stock_code)
         
         if stock_price <= 0:
             await ctx.send(f"❌ 無法取得 {stock_name}({stock_code}) 的有效股價。")
@@ -187,7 +186,7 @@ class TradingCog(commands.Cog):
         """
         user_id = str(ctx.author.id)
         
-        stock_code, stock_name = get_stock_info(stock_identifier)
+        stock_code, stock_name = stock_utils.get_stock_info(stock_identifier)
         if not stock_code:
             await ctx.send(f"❌ 找不到股票 `{stock_identifier}`。")
             return
@@ -251,7 +250,7 @@ class TradingCog(commands.Cog):
         """
         user_id = str(ctx.author.id)
         
-        stock_code, stock_name = get_stock_info(stock_identifier)
+        stock_code, stock_name = stock_utils.get_stock_info(stock_identifier)
         if not stock_code:
             await ctx.send(f"❌ 找不到股票 `{stock_identifier}`。")
             return

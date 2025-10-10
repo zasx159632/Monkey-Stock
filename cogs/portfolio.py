@@ -15,7 +15,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from database.schema import TradingDatabase
 from utils import stock_utils
-stock_data = stock_utils.stock_data
+
 # For image generation (if PIL is available)
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -70,7 +70,7 @@ class PortfolioCog(commands.Cog):
             shares = holding['shares']
             cost = holding['total_cost']
             
-            current_price = get_stock_price(stock_code)
+            current_price = stock_utils.get_stock_price(stock_code)
             avg_cost = cost / shares if shares > 0 else 0
             
             if current_price > 0:
@@ -274,7 +274,7 @@ class PortfolioCog(commands.Cog):
             await ctx.send("❌ 新的成本必須是正數。")
             return
         
-        stock_code, stock_name = get_stock_info(stock_identifier)
+        stock_code, stock_name = stock_utils.get_stock_info(stock_identifier)
         if not stock_code:
             await ctx.send(f"❌ 找不到股票 `{stock_identifier}`。")
             return

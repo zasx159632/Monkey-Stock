@@ -14,7 +14,6 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from database.schema import TradingDatabase
 from utils import stock_utils
-stock_data = stock_utils.stock_data
 
 # Fee constants
 HANDLING_FEE = 0.001425
@@ -145,13 +144,13 @@ class MonkeyCog(commands.Cog):
     
     async def _execute_monkey_buy(self, ctx, user_id: str, min_amount: int, max_amount: int):
         """Execute monkey buy action."""
-        if not stock_data:
+        if not stock_utils.stock_data:
             await ctx.send("❌ 股票資料未載入。")
             return
         
         # Random stock selection
-        stock_code, stock_name = random.choice(list(stock_data.items()))
-        stock_price = get_stock_price(stock_code)
+        stock_code, stock_name = random.choice(list(stock_utils.stock_data.items()))
+        stock_price = stock_utils.get_stock_price(stock_code)
         
         if stock_price <= 0:
             await ctx.send(f"🐵 猴子想買 **{stock_name}**，但查不到它的股價，只好放棄。")
@@ -211,7 +210,7 @@ class MonkeyCog(commands.Cog):
         average_cost = total_cost / shares_held
         
         # Get current price for reference
-        current_price = get_stock_price(stock_code)
+        current_price = stock_utils.get_stock_price(stock_code)
         price_info = f"目前市場價格為 **${current_price}** 元" if current_price > 0 else ""
         
         # Save sell state to database
